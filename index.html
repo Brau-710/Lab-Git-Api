@@ -30,7 +30,6 @@
       overflow: hidden;
     }
 
-    /* Diagonal background stripe */
     body::before {
       content: '';
       position: fixed;
@@ -96,8 +95,10 @@
       padding: 2rem 2.5rem;
       min-height: 130px;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 1rem;
       position: relative;
       transition: opacity 0.3s ease, transform 0.3s ease;
     }
@@ -126,17 +127,41 @@
       font-weight: 400;
     }
 
+    .category-badge {
+      display: inline-block;
+      background: rgba(192, 57, 43, 0.15);
+      border: 1px solid rgba(192, 57, 43, 0.4);
+      color: #e88a82;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      padding: 3px 12px;
+      border-radius: 2px;
+    }
+
+    .category-badge.hidden {
+      display: none;
+    }
+
     .error-text {
       color: var(--accent);
       font-size: 0.95rem;
     }
 
-    .btn {
+    .btn-group {
       margin-top: 2rem;
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
       background: var(--red);
       color: #fff;
       border: none;
-      padding: 0.9rem 2.8rem;
+      padding: 0.9rem 2.2rem;
       font-family: 'Bebas Neue', sans-serif;
       font-size: 1.3rem;
       letter-spacing: 0.15em;
@@ -164,6 +189,57 @@
       transform: none;
     }
 
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--red);
+      color: #e88a82;
+      box-shadow: none;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(192, 57, 43, 0.12);
+      box-shadow: none;
+    }
+
+    .category-selector {
+      margin-top: 1rem;
+      display: none;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      animation: fadeIn 0.25s ease;
+    }
+
+    .category-selector.open {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .cat-pill {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 5px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .cat-pill:hover,
+    .cat-pill.active {
+      border-color: var(--red);
+      color: #e88a82;
+      background: rgba(192, 57, 43, 0.1);
+    }
+
     .footer {
       margin-top: 2.5rem;
       font-size: 0.75rem;
@@ -174,6 +250,7 @@
     @media (max-width: 480px) {
       .card { padding: 1.5rem; }
       #joke-text { font-size: 1rem; }
+      .btn { font-size: 1.1rem; padding: 0.8rem 1.6rem; }
     }
   </style>
 </head>
@@ -186,10 +263,16 @@
     <p class="subtitle">facts that cannot be denied</p>
 
     <div class="card" id="card">
+      <span class="category-badge hidden" id="category-badge"></span>
       <p id="joke-text">Carrega no botão e descobre um facto sobre o lendário Chuck Norris.</p>
     </div>
 
-    <button class="btn" id="btn" onclick="fetchJoke()">Nova piada</button>
+    <div class="btn-group">
+      <button class="btn" id="btn-random" onclick="fetchJoke()">Piada aleatória</button>
+      <button class="btn btn-secondary" id="btn-category" onclick="toggleCategories()">Por categoria</button>
+    </div>
+
+    <div class="category-selector" id="category-selector"></div>
 
     <p class="footer">Powered by chucknorris.io &nbsp;|&nbsp; Feito com medo de Chuck</p>
   </div>
@@ -197,28 +280,94 @@
   <script>
     const jokeText = document.getElementById('joke-text');
     const card = document.getElementById('card');
-    const btn = document.getElementById('btn');
+    const btnRandom = document.getElementById('btn-random');
+    const btnCategory = document.getElementById('btn-category');
+    const categoryBadge = document.getElementById('category-badge');
+    const categorySelector = document.getElementById('category-selector');
 
-    async function fetchJoke() {
-      btn.disabled = true;
-      card.classList.add('loading');
+    const categoryLabels = {
+      animal: 'Animais', career: 'Carreira', celebrity: 'Celebridades',
+      dev: 'Programação', explicit: 'Adulto', fashion: 'Moda',
+      food: 'Comida', history: 'História', money: 'Dinheiro',
+      movie: 'Cinema', music: 'Música', political: 'Política',
+      religion: 'Religião', science: 'Ciência', sport: 'Desporto',
+      travel: 'Viagens'
+    };
 
+    let selectedCategory = null;
+    let categoriesLoaded = false;
+
+    async function loadCategories() {
+      if (categoriesLoaded) return;
       try {
-        const res = await fetch('https://api.chucknorris.io/jokes/random');
-        if (!res.ok) throw new Error('Falha na API');
-        const data = await res.json();
-        jokeText.classList.remove('error-text');
-        jokeText.textContent = data.value;
-      } catch (err) {
-        jokeText.classList.add('error-text');
-        jokeText.textContent = 'Não foi possível carregar uma piada. Até a internet tem medo de Chuck Norris.';
-      } finally {
-        card.classList.remove('loading');
-        btn.disabled = false;
+        const res = await fetch('https://api.chucknorris.io/jokes/categories');
+        const cats = await res.json();
+        cats.forEach(cat => {
+          const pill = document.createElement('button');
+          pill.className = 'cat-pill';
+          pill.textContent = categoryLabels[cat] || cat;
+          pill.dataset.cat = cat;
+          pill.onclick = () => selectCategory(cat, pill);
+          categorySelector.appendChild(pill);
+        });
+        categoriesLoaded = true;
+      } catch (e) {
+        console.error('Erro ao carregar categorias', e);
       }
     }
 
-    // Load one on start
+    function toggleCategories() {
+      categorySelector.classList.toggle('open');
+      if (categorySelector.classList.contains('open')) {
+        loadCategories();
+      }
+    }
+
+    function selectCategory(cat, pillEl) {
+      document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
+      pillEl.classList.add('active');
+      selectedCategory = cat;
+      categorySelector.classList.remove('open');
+      fetchJoke(cat);
+    }
+
+    async function fetchJoke(category = null) {
+      btnRandom.disabled = true;
+      btnCategory.disabled = true;
+      card.classList.add('loading');
+      categoryBadge.classList.add('hidden');
+
+      try {
+        const url = category
+          ? `https://api.chucknorris.io/jokes/random?category=${category}`
+          : 'https://api.chucknorris.io/jokes/random';
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Falha na API');
+        const data = await res.json();
+
+        jokeText.classList.remove('error-text');
+        jokeText.textContent = data.value;
+
+        if (data.categories && data.categories.length > 0) {
+          const cat = data.categories[0];
+          categoryBadge.textContent = categoryLabels[cat] || cat;
+          categoryBadge.classList.remove('hidden');
+        } else if (category) {
+          categoryBadge.textContent = categoryLabels[category] || category;
+          categoryBadge.classList.remove('hidden');
+        }
+      } catch (err) {
+        jokeText.classList.add('error-text');
+        jokeText.textContent = 'Não foi possível carregar uma piada. Até a internet tem medo de Chuck Norris.';
+        categoryBadge.classList.add('hidden');
+      } finally {
+        card.classList.remove('loading');
+        btnRandom.disabled = false;
+        btnCategory.disabled = false;
+      }
+    }
+
     fetchJoke();
   </script>
 </body>
